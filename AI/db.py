@@ -5,12 +5,16 @@ MongoDB helper for saving prediction history.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 import os
 from pathlib import Path
 from typing import Any
 
 from pymongo import MongoClient
 from pymongo.collection import Collection
+
+
+logger = logging.getLogger(__name__)
 
 
 ENV_PATH = Path(__file__).with_name(".env")
@@ -38,6 +42,7 @@ _load_env_file()
 MONGO_URI = os.getenv("MONGO_URI")
 DATABASE_NAME = os.getenv("MONGO_DB", "stampede_window_predictor")
 COLLECTION_NAME = os.getenv("MONGO_COLLECTION", "predictions")
+_CLIENT: MongoClient | None = None
 
 
 def database_configured() -> bool:
@@ -50,13 +55,15 @@ def get_predictions_collection() -> Collection | None:
     if not MONGO_URI:
         return None
 
-    client = MongoClient(
-        MONGO_URI,
-        serverSelectionTimeoutMS=1000,
-        connectTimeoutMS=1000,
-        socketTimeoutMS=1000,
-    )
-    return client[DATABASE_NAME][COLLECTION_NAME]
+    global _CLIENT
+    if _CLIENT is None:
+        _CLIENT = MongoClient(
+            MONGO_URI,
+            serverSelectionTimeoutMS=1000,
+            connectTimeoutMS=1000,
+            socketTimeoutMS=1000,
+        )
+    return _CLIENT[DATABASE_NAME][COLLECTION_NAME]
 
 
 def save_prediction(input_data: dict[str, Any], output_data: dict[str, Any]) -> str | None:
@@ -74,5 +81,6 @@ def save_prediction(input_data: dict[str, Any], output_data: dict[str, Any]) -> 
 
         result = collection.insert_one(document)
         return str(result.inserted_id)
-    except Exception:
+    except Exception as exc:
+        logger.warning("Failed to save prediction history: %s", exc)
         return None

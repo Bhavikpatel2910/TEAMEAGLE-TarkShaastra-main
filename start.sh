@@ -49,8 +49,8 @@ fi
 echo ""
 
 # Step 2: Start Backend
-echo -e "${YELLOW}Step 2: Starting Backend (Port 3000)...${NC}"
-if check_port 3000; then
+echo -e "${YELLOW}Step 2: Starting Backend (Port 5001)...${NC}"
+if check_port 5001; then
     cd backend
     npm install -q 2>/dev/null
     npm start > ../backend.log 2>&1 &
@@ -59,21 +59,21 @@ if check_port 3000; then
     sleep 2
     cd ..
 else
-    echo -e "${RED}❌ Could not start Backend - Port 3000 in use${NC}"
+    echo -e "${RED}❌ Could not start Backend - Port 5001 in use${NC}"
 fi
 
 echo ""
 
 # Step 3: Start Frontend
-echo -e "${YELLOW}Step 3: Starting Frontend (Port 5500)...${NC}"
-if check_port 5500; then
+echo -e "${YELLOW}Step 3: Starting Frontend (Port 8000)...${NC}"
+if check_port 8000; then
     cd frontend
-    python -m http.server 5500 > ../frontend.log 2>&1 &
+    python -m http.server 8000 > ../frontend.log 2>&1 &
     FRONTEND_PID=$!
     echo -e "${GREEN}✅ Frontend started (PID: $FRONTEND_PID)${NC}"
     cd ..
 else
-    echo -e "${RED}❌ Could not start Frontend - Port 5500 in use${NC}"
+    echo -e "${RED}❌ Could not start Frontend - Port 8000 in use${NC}"
 fi
 
 echo ""
@@ -82,8 +82,8 @@ echo -e "${GREEN}✅ All services started successfully!${NC}"
 echo -e "${GREEN}════════════════════════════════════════${NC}"
 echo ""
 echo "📊 Service URLs:"
-echo -e "  ${GREEN}Frontend:${NC}  http://localhost:5500/predictor.html"
-echo -e "  ${GREEN}Backend:${NC}   http://localhost:3000"
+echo -e "  ${GREEN}Frontend:${NC}  http://localhost:8000/index.html"
+echo -e "  ${GREEN}Backend:${NC}   http://localhost:5001"
 echo -e "  ${GREEN}AI API:${NC}    http://localhost:5000"
 echo ""
 echo "📝 Logs:"

@@ -5,11 +5,16 @@ Run from this folder with: python -m uvicorn api:app --reload
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel, Field
 
 from db import database_configured, save_prediction
 from model import MODEL, get_prediction_result
+
+
+logger = logging.getLogger(__name__)
 
 
 app = FastAPI(
@@ -55,6 +60,11 @@ def health_check() -> dict[str, str | bool]:
     }
 
 
+@app.get("/health")
+def health() -> dict[str, str | bool]:
+    return health_check()
+
+
 @app.get("/favicon.ico", include_in_schema=False)
 def favicon() -> Response:
     return Response(status_code=204)
@@ -72,3 +82,14 @@ def predict(payload: PredictionInput) -> PredictionOutput:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Prediction failed: {exc}") from exc
+
+
+@app.on_event("startup")
+def log_startup_state() -> None:
+    if MODEL is None:
+        logger.warning("ML model not loaded; using PSI-only predictions")
+    else:
+        logger.info("ML model loaded successfully")
+
+    if not database_configured():
+        logger.info("MongoDB not configured; prediction history will be skipped")

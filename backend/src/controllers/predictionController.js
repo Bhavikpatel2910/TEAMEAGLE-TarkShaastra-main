@@ -3,6 +3,7 @@ const Alert = require('../models/Alert');
 const Corridor = require('../models/Corridor');
 const SensorData = require('../models/SensorData');
 const { callAIPrediction } = require('../services/aiService');
+const logger = require('../utils/logger');
 const {
   getCorridor: getMemoryCorridor,
   listHistory: listMemoryHistory,
@@ -14,15 +15,17 @@ function isDbConnected() {
 }
 
 function normalizeHistoryInput(corridor, sensor) {
+  const weatherPenalty = Number(sensor?.weatherPenalty);
+  const weatherFromPenalty = weatherPenalty === 6 ? 'Rain' : weatherPenalty === 4 ? 'Heat' : 'Clear';
   return {
-    entryRate: sensor.entryRate,
-    exitRate: sensor.exitRate,
-    density: sensor.density,
-    width: corridor?.width ?? sensor.width ?? 0.5,
-    vehicleCount: sensor.vehicleCount ?? 0,
-    transportArrivalBurst: sensor.transportArrivalBurst ?? sensor.transportBurst ?? 0,
-    weather: sensor.weather ?? sensor.weatherPenalty ?? 'Clear',
-    festivalPeak: sensor.festivalPeak ?? sensor.festival ?? 0,
+    entryRate: sensor?.entryRate ?? 0,
+    exitRate: sensor?.exitRate ?? 0,
+    density: sensor?.density ?? 0,
+    width: corridor?.width ?? sensor?.width ?? 0.5,
+    vehicleCount: sensor?.vehicleCount ?? 0,
+    transportArrivalBurst: sensor?.transportArrivalBurst ?? sensor?.transportBurst ?? 0,
+    weather: sensor?.weather || weatherFromPenalty,
+    festivalPeak: sensor?.festivalPeak ?? sensor?.festival ?? 0,
   };
 }
 
@@ -34,21 +37,45 @@ function isValidPredictionShape(payload) {
     typeof payload.reason === 'string';
 }
 
-function toNumber(value, fallback = 0) {
+const ALLOWED_WEATHER = new Set(['clear', 'heat', 'rain']);
+
+function normalizeWeather(value) {
+  const raw = String(value || 'Clear').trim();
+  if (!raw) return 'Clear';
+  const normalized = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+  if (!ALLOWED_WEATHER.has(normalized.toLowerCase())) {
+    throw new Error('weather must be one of: Clear, Heat, Rain');
+  }
+  return normalized;
+}
+
+function requireNonNegativeNumber(value, fieldName, fallback = 0) {
+  if (value === undefined || value === null || value === '') {
+    return fallback;
+  }
+
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${fieldName} must be a valid number`);
+  }
+
+  if (parsed < 0) {
+    throw new Error(`${fieldName} cannot be negative`);
+  }
+
+  return parsed;
 }
 
 function normalizePredictInput(body = {}, widthFallback = 0.5) {
   return {
-    entryRate: toNumber(body.entryRate ?? body.entry_flow_rate_pax_per_min, 0),
-    exitRate: toNumber(body.exitRate ?? body.exit_flow_rate_pax_per_min, 0),
-    density: toNumber(body.density ?? body.queue_density_pax_per_m2, 0),
-    width: Math.max(0.5, toNumber(body.width ?? body.corridor_width_m, widthFallback)),
-    vehicleCount: toNumber(body.vehicleCount ?? body.vehicle_count, 0),
-    transportArrivalBurst: toNumber(body.transportArrivalBurst ?? body.transport_arrival_burst, 0),
-    weather: String(body.weather || 'Clear'),
-    festivalPeak: toNumber(body.festivalPeak ?? body.festival_peak, 0),
+    entryRate: requireNonNegativeNumber(body.entryRate ?? body.entry_flow_rate_pax_per_min, 'entryRate', 0),
+    exitRate: requireNonNegativeNumber(body.exitRate ?? body.exit_flow_rate_pax_per_min, 'exitRate', 0),
+    density: requireNonNegativeNumber(body.density ?? body.queue_density_pax_per_m2, 'density', 0),
+    width: Math.max(0.5, requireNonNegativeNumber(body.width ?? body.corridor_width_m, 'width', widthFallback)),
+    vehicleCount: requireNonNegativeNumber(body.vehicleCount ?? body.vehicle_count, 'vehicleCount', 0),
+    transportArrivalBurst: requireNonNegativeNumber(body.transportArrivalBurst ?? body.transport_arrival_burst, 'transportArrivalBurst', 0),
+    weather: normalizeWeather(body.weather),
+    festivalPeak: requireNonNegativeNumber(body.festivalPeak ?? body.festival_peak, 'festivalPeak', 0),
   };
 }
 
@@ -113,13 +140,15 @@ exports.getPrediction = async (req, res) => {
 exports.createPrediction = async (req, res) => {
   try {
     const normalizedInput = normalizePredictInput(req.body);
-    console.log('INPUT:', normalizedInput);
+    logger.debug('Prediction request received', normalizedInput);
     const prediction = await callAIPrediction(normalizedInput);
     if (!isValidPredictionShape(prediction)) {
       return res.status(502).json({ error: 'Invalid AI prediction response shape' });
     }
-    console.log('PSI:', prediction.pressure_index);
-    console.log('ML:', prediction.risk_level);
+    logger.debug('Prediction response ready', {
+      pressure_index: prediction.pressure_index,
+      risk_level: prediction.risk_level,
+    });
 
     const corridorId = String(req.body.corridor_id || req.body.corridorId || 'prediction');
 
@@ -154,7 +183,7 @@ exports.createPrediction = async (req, res) => {
 
     res.json(prediction);
   } catch (error) {
-    console.error('Prediction error:', error.message);
+    logger.error('Prediction request failed', error);
     res.status(500).json({
       error: 'Prediction failed',
       details: error.message,

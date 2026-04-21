@@ -1,7 +1,11 @@
 const jwt = require('jsonwebtoken');
 
 function getJwtSecret() {
-  return process.env.JWT_SECRET || 'stampede-window-predictor-dev-secret';
+  const secret = process.env.JWT_SECRET;
+  if (!secret && process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET is required in production');
+  }
+  return secret || 'stampede-window-predictor-dev-secret';
 }
 
 module.exports = (req, res, next) => {

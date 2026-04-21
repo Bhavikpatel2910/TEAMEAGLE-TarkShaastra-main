@@ -95,7 +95,7 @@ python -m uvicorn api:app --port 5001
 ## Architecture
 
 ```
-Frontend (port 5500)
+Frontend (port 8000)
     ↓
 Node.js Backend (port 5001) ← MAIN API (Always needed)
     ├─→ MongoDB (optional)
@@ -169,7 +169,7 @@ curl -X POST http://localhost:5000/predict \
 | Component | Required | Port |
 |-----------|----------|------|
 | Node.js Backend | ✅ YES | 5001 |
-| Frontend Server | ✅ YES | 5500 |
+| Frontend Server | ✅ YES | 8000 |
 | Python AI API | ❌ NO (Optional) | 5000 |
 | MongoDB | ❌ NO (Optional) | 27017 |
 

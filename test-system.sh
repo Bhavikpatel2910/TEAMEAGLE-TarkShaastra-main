@@ -107,7 +107,7 @@ echo ""
 if [ $FAIL -eq 0 ]; then
     echo "🎉 ALL TESTS PASSED! System is fully functional."
     echo ""
-    echo "🌐 Access frontend at: http://localhost:5500/index.html"
+    echo "🌐 Access frontend at: http://localhost:8000/index.html"
     exit 0
 else
     echo "⚠️  Some tests failed. Check that:"

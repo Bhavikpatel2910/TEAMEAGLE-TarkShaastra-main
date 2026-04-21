@@ -5,7 +5,7 @@ const corridorSchema = new mongoose.Schema({
   width: { type: Number, required: true, min: 0.5 },
   length: { type: Number, default: 0, min: 0 },
   capacity: { type: Number, default: 0, min: 0 }
-}, { timestamps: true, strict: false });
+}, { timestamps: true });
 
 // Index for faster queries
 corridorSchema.index({ name: 1 });

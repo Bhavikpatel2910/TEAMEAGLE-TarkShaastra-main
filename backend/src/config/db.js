@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const logger = require('../utils/logger');
 
 function isDbDisabled() {
   const flag = String(process.env.DISABLE_DB || '').trim().toLowerCase();
@@ -7,7 +8,7 @@ function isDbDisabled() {
 
 const connectDB = async () => {
   if (isDbDisabled()) {
-    console.log('MongoDB disabled via DISABLE_DB=true - running in memory mode');
+    logger.info('MongoDB disabled via DISABLE_DB=true - running in memory mode');
     return;
   }
 
@@ -15,14 +16,14 @@ const connectDB = async () => {
     if (process.env.MONGO_URI) {
       await mongoose.connect(process.env.MONGO_URI, {
         serverSelectionTimeoutMS: 5000,
+        maxPoolSize: 10,
       });
-      console.log('MongoDB connected');
+      logger.info('MongoDB connected');
     } else {
-      console.log('MongoDB URI not configured - running in memory mode');
+      logger.info('MongoDB URI not configured - running in memory mode');
     }
   } catch (err) {
-    console.error('MongoDB connection failed:', err.message);
-    console.log('Continuing without database - API will still work');
+    logger.warn('MongoDB connection failed; continuing in memory mode', { message: err.message });
   }
 };
 

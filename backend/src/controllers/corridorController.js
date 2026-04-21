@@ -21,6 +21,39 @@ function toNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+const ALLOWED_WEATHER = new Set(['Clear', 'Heat', 'Rain']);
+
+function parseRequiredNumber(value, fieldName, min = 0, fallback = 0) {
+  if (value === undefined || value === null || value === '') {
+    return fallback;
+  }
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw new Error(`${fieldName} must be a valid number`);
+  }
+
+  if (parsed < min) {
+    throw new Error(`${fieldName} must be at least ${min}`);
+  }
+
+  return parsed;
+}
+
+function normalizeWeather(value) {
+  const raw = String(value || 'Clear').trim();
+  if (!raw) return 'Clear';
+  const normalized = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+  if (!ALLOWED_WEATHER.has(normalized)) {
+    throw new Error('weather must be one of: Clear, Heat, Rain');
+  }
+  return normalized;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function getRiskLevel(pressure) {
   if (pressure < 50) return 'LOW';
   if (pressure < 120) return 'MODERATE';
@@ -47,24 +80,33 @@ function buildAlertPayload(corridorId, pressure) {
 }
 
 function buildSensorPayload(body = {}, width = 0.5) {
-  const normalizedWidth = Math.max(0.5, toNumber(body.width ?? width, width));
-  const normalizedWeather = String(body.weather || 'Clear');
+  const normalizedWeather = normalizeWeather(body.weather);
   const weatherPenaltyMap = { clear: 0, heat: 4, rain: 6 };
   const weatherPenalty = weatherPenaltyMap[normalizedWeather.trim().toLowerCase()] ?? 0;
+  const entryRate = parseRequiredNumber(body.entryRate ?? body.entry_flow_rate_pax_per_min, 'entryRate', 0, 0);
+  const exitRate = parseRequiredNumber(body.exitRate ?? body.exit_flow_rate_pax_per_min, 'exitRate', 0, 0);
+  const density = parseRequiredNumber(body.density ?? body.queue_density_pax_per_m2, 'density', 0, 0);
+  const vehicleCount = parseRequiredNumber(body.vehicleCount ?? body.vehicle_count, 'vehicleCount', 0, 0);
+  const transportBurst = parseRequiredNumber(body.transportArrivalBurst ?? body.transport_arrival_burst ?? body.transportBurst, 'transportArrivalBurst', 0, 0);
+  const festivalPeak = parseRequiredNumber(body.festivalPeak ?? body.festival_peak ?? body.festival, 'festivalPeak', 0, 0);
+  const widthProvided = body.width ?? body.corridor_width_m;
+  const normalizedWidth = widthProvided === undefined || widthProvided === null || widthProvided === ''
+    ? Math.max(0.5, toNumber(width, width))
+    : parseRequiredNumber(widthProvided, 'width', 0.5, Math.max(0.5, toNumber(width, width)));
 
   return {
     corridorId: String(body.corridorId || '').trim(),
-    entryRate: toNumber(body.entryRate ?? body.entry_flow_rate_pax_per_min, 0),
-    exitRate: toNumber(body.exitRate ?? body.exit_flow_rate_pax_per_min, 0),
-    density: toNumber(body.density ?? body.queue_density_pax_per_m2, 0),
+    entryRate,
+    exitRate,
+    density,
     width: normalizedWidth,
-    vehicleCount: toNumber(body.vehicleCount ?? body.vehicle_count, 0),
-    transportBurst: toNumber(body.transportArrivalBurst ?? body.transport_arrival_burst ?? body.transportBurst, 0),
-    transportArrivalBurst: toNumber(body.transportArrivalBurst ?? body.transport_arrival_burst ?? body.transportBurst, 0),
+    vehicleCount,
+    transportBurst,
+    transportArrivalBurst: transportBurst,
     weather: normalizedWeather,
     weatherPenalty,
-    festival: toNumber(body.festivalPeak ?? body.festival_peak ?? body.festival, 0),
-    festivalPeak: toNumber(body.festivalPeak ?? body.festival_peak ?? body.festival, 0),
+    festival: festivalPeak,
+    festivalPeak,
   };
 }
 
@@ -129,7 +171,7 @@ exports.getCorridors = async (req, res) => {
 
 exports.createCorridor = async (req, res) => {
   try {
-    const name = String(req.body.name || '').trim();
+    const name = String(req.body.name || '').trim().replace(/\s+/g, ' ');
     const width = toNumber(req.body.width, NaN);
     const length = toNumber(req.body.length, 0);
     const capacity = toNumber(req.body.capacity, 0);
@@ -151,12 +193,22 @@ exports.createCorridor = async (req, res) => {
     const corridorPayload = { name, width, length, capacity };
 
     if (!isDbConnected()) {
+      const duplicate = listMemoryCorridors().find(
+        (corridor) => String(corridor.name || '').trim().toLowerCase() === name.toLowerCase()
+      );
+      if (duplicate) {
+        return res.status(409).json({
+          error: `Corridor "${name}" already exists`,
+          conflictId: String(duplicate.id || duplicate._id),
+        });
+      }
+
       const corridor = saveCorridor(corridorPayload);
       return res.status(201).json(corridor);
     }
 
     // Check for duplicate name
-    const existing = await Corridor.findOne({ name });
+    const existing = await Corridor.findOne({ name: new RegExp(`^${escapeRegExp(name)}$`, 'i') });
     if (existing) {
       return res.status(409).json({ 
         error: `Corridor "${name}" already exists`,
@@ -196,7 +248,12 @@ exports.ingestSensorData = async (req, res) => {
       return res.status(404).json({ error: 'Corridor not found' });
     }
 
-    const sensorPayload = buildSensorPayload(req.body, corridor.width);
+    let sensorPayload;
+    try {
+      sensorPayload = buildSensorPayload(req.body, corridor.width);
+    } catch (error) {
+      return res.status(400).json({ error: error.message });
+    }
     const aiInput = {
       entryRate: sensorPayload.entryRate,
       exitRate: sensorPayload.exitRate,

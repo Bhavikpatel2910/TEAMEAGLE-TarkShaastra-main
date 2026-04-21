@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const connectDB = require('./config/db');
+const logger = require('./utils/logger');
 
 const authRoutes = require('./routes/authRoutes');
 const corridorRoutes = require('./routes/corridorRoutes');
@@ -13,8 +14,33 @@ const app = express();
 
 connectDB();
 
-app.use(cors());
-app.use(express.json());
+const defaultOrigins = new Set([
+  'http://localhost:8000',
+  'http://127.0.0.1:8000',
+  'http://localhost:5500',
+  'http://127.0.0.1:5500',
+]);
+
+const configuredOrigins = String(process.env.FRONTEND_URLS || process.env.FRONTEND_URL || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const allowedOrigins = new Set(configuredOrigins.length ? configuredOrigins : defaultOrigins);
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.has(origin) || process.env.NODE_ENV !== 'production') {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error('CORS origin not allowed'));
+  },
+  credentials: true,
+  optionsSuccessStatus: 200,
+}));
+app.use(express.json({ limit: '1mb' }));
 
 app.get('/api', (req, res) => {
   res.json({
@@ -43,7 +69,7 @@ app.use((req, res) => {
 });
 
 app.use((err, req, res, next) => {
-  console.error('Unhandled API error:', err.message);
+  logger.error('Unhandled API error', err);
   res.status(err.status || 500).json({
     error: err.message || 'Internal server error',
   });

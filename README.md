@@ -113,7 +113,7 @@ MONGO_URI=mongodb+srv://user:password@cluster.mongodb.net/dbname
 DISABLE_DB=false
 
 # API
-AI_API_URL=http://localhost:5002
+AI_API_URL=http://localhost:5000
 STORE_PREDICTIONS=false
 
 # Security
@@ -407,7 +407,7 @@ tail -f backend/server.log
 ### "Port 5001 already in use"
 ```bash
 # Change port in .env
-PORT=5002
+PORT=5001
 ```
 
 ### "CORS errors"

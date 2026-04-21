@@ -1,6 +1,16 @@
 const axios = require('axios');
+const logger = require('../utils/logger');
+const { getLocalPrediction } = require('./predictionService');
 
 const AI_API_URL = process.env.AI_API_URL || 'http://localhost:5000';
+
+function hasValidPredictionShape(payload) {
+  return payload
+    && typeof payload.pressure_index === 'number'
+    && typeof payload.predicted_crush_window_min === 'number'
+    && typeof payload.risk_level === 'string'
+    && typeof payload.reason === 'string';
+}
 
 /**
  * Call the AI API to get a prediction
@@ -16,16 +26,24 @@ exports.callAIPrediction = async (predictionData) => {
       timeout: 10000, // 10 second timeout
     });
 
-    return response.data;
-  } catch (error) {
-    if (error.response) {
-      // AI API returned an error response
-      throw new Error(`AI API Error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
-    } else if (error.request) {
-      // No response from AI API
-      throw new Error(`AI API unreachable at ${AI_API_URL}. Make sure the AI service is running.`);
-    } else {
-      throw new Error(`Error calling AI API: ${error.message}`);
+    if (hasValidPredictionShape(response.data)) {
+      return response.data;
     }
+
+    logger.warn('AI API returned an invalid payload; using local fallback', {
+      url: AI_API_URL,
+    });
+  } catch (error) {
+    logger.warn('AI API unavailable; using local prediction fallback', {
+      url: AI_API_URL,
+      message: error.message,
+    });
   }
+
+  const fallback = getLocalPrediction(predictionData);
+  if (!hasValidPredictionShape(fallback)) {
+    throw new Error('Local prediction fallback produced an invalid response');
+  }
+
+  return fallback;
 };

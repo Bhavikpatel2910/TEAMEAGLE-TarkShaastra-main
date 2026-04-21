@@ -3,6 +3,8 @@ let nextId = 1;
 const memoryCorridors = new Map();
 const memoryHistory = new Map();
 const memoryAlerts = new Map();
+const MAX_HISTORY_PER_CORRIDOR = 500;
+const MAX_ALERTS = 500;
 
 function createId(prefix) {
   return `${prefix}-${Date.now()}-${nextId++}`;
@@ -53,6 +55,9 @@ function saveHistory(input) {
     timestamp: input.timestamp || toIso(),
   };
   rows.push(row);
+  if (rows.length > MAX_HISTORY_PER_CORRIDOR) {
+    rows.splice(0, rows.length - MAX_HISTORY_PER_CORRIDOR);
+  }
   memoryHistory.set(corridorId, rows);
   return row;
 }
@@ -68,21 +73,28 @@ function saveAlert(input) {
   const id = String(input._id || input.id || createId('alert'));
   const existing = memoryAlerts.get(id);
   const alert = {
-    acknowledged: false,
     ...(existing || {}),
     ...input,
     _id: id,
     id,
     createdAt: existing?.createdAt || input.createdAt || now,
+    acknowledged: existing ? Boolean(input.acknowledged ?? existing.acknowledged) : false,
   };
   memoryAlerts.set(id, alert);
+
+  while (memoryAlerts.size > MAX_ALERTS) {
+    const oldestKey = memoryAlerts.keys().next().value;
+    if (oldestKey === undefined) break;
+    memoryAlerts.delete(oldestKey);
+  }
+
   return alert;
 }
 
 function acknowledgeAlert(id) {
   const current = memoryAlerts.get(String(id));
   if (!current) return null;
-  const updated = { ...current, acknowledged: true };
+  const updated = { ...current, acknowledged: true, updatedAt: toIso() };
   memoryAlerts.set(String(id), updated);
   return updated;
 }

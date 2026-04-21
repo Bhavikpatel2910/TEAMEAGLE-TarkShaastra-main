@@ -1967,7 +1967,6 @@ body {
 
 <script>// ── STATE ──────────────────────────────
 let BASE = 'http://localhost:5001/api';
-const PREDICT_API_URL = 'http://localhost:5001/api/predict';
 let token = '';
 let currentTab = 'overview';
 let breachSeconds = null; // Will be set by real prediction
@@ -1987,6 +1986,17 @@ const API_REQUEST_TIMEOUT_MS = 2500;
 let apiBaseVerifiedAt = 0;
 let apiBaseProbePromise = null;
 let liveDataInFlight = false;
+function getPredictApiUrl() {
+  return `${BASE}/predict`;
+}
+
+async function readJsonSafely(response) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+}
 // ── HELPERS ────────────────────────────
 function showToast(msg) {
   const t = document.getElementById('toast');
@@ -2143,7 +2153,7 @@ async function doLogin() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
     });
-    const data = await res.json();
+    const data = await readJsonSafely(res);
     if (data.token) {
       token = data.token;
       statusEl.textContent = '✓ Authenticated. Loading command center...';
@@ -2181,7 +2191,7 @@ async function loadLiveData() {
 
     // Handle responses
     if (corridorsRes.ok && alertsRes.ok) {
-      const [corridorsData, alertsData] = await Promise.all([corridorsRes.json(), alertsRes.json()]);
+      const [corridorsData, alertsData] = await Promise.all([readJsonSafely(corridorsRes), readJsonSafely(alertsRes)]);
       liveCorridors = (Array.isArray(corridorsData) ? corridorsData : []).map(normalizeCorridor);
       liveAlerts = (Array.isArray(alertsData) ? alertsData : []).map(normalizeAlert);
     } else if (corridorsRes.status === 404 || alertsRes.status === 404) {
@@ -2192,7 +2202,7 @@ async function loadLiveData() {
         showToast('⚠️  Could not load live data');
         return;
       }
-      const dashboardData = await dashboardRes.json();
+      const dashboardData = await readJsonSafely(dashboardRes);
       liveCorridors = (Array.isArray(dashboardData.corridors) ? dashboardData.corridors : []).map(normalizeCorridor);
       liveAlerts = (Array.isArray(dashboardData.alerts) ? dashboardData.alerts : []).map(normalizeAlert);
     } else {
@@ -2582,12 +2592,12 @@ function calculateCPI(entry, exit, density, burst, weather, festival, width = 6,
   const weatherPenalty = weatherPenaltyFromValue(weather);
 
   const cpi =
-    (8.7 * density) *
-    (0.42 * (netInflow / effectiveWidth)) *
-    (1.9 * vehicles) *
-    (10 * burst) *
-    (7 * festival) *
-    (1 + weatherPenalty / 100);
+    (8.7 * density) +
+    (0.42 * (netInflow / effectiveWidth)) +
+    (1.9 * vehicles) +
+    (10 * burst) +
+    (7 * festival) +
+    weatherPenalty;
 
   return Math.max(0, Math.round(cpi * 100) / 100);
 }
@@ -2622,11 +2632,14 @@ async function sendSensorData() {
       })
     });
     if (!response.ok) {
-      const err = await response.json();
+      const err = await readJsonSafely(response);
       throw new Error(err.error || 'Failed to send sensor data');
     }
-    const result = await response.json();
-    const cpi = Number(result.pressure);
+    const result = await readJsonSafely(response);
+    const cpi = Number(result.pressure ?? result.pressure_index ?? result.cpi);
+    if (!Number.isFinite(cpi)) {
+      throw new Error('Invalid sensor response');
+    }
     updateCPIDisplay(cpi, entry, exit, density, burst, weather, festival, corridorWidth, vehicles);
     addToHistory(corridorName, cpi);
     await loadLiveData();
@@ -2659,11 +2672,16 @@ function updateCPIDisplay(cpi, entry, exit, density, burst, weather, festival, w
   const netInflow = Math.max(0, entry - exit);
   const effectiveWidth = Math.max(width || 0, 0.5);
   const weatherPenalty = weatherPenaltyFromValue(weather);
-  document.getElementById('f-flow').textContent = (0.42 * (netInflow / effectiveWidth)).toFixed(2);
-  document.getElementById('f-density').textContent = (8.7 * density).toFixed(2);
-  document.getElementById('f-burst').textContent = ((10 * burst) + (1.9 * vehicles)).toFixed(2);
-  document.getElementById('f-env').textContent = ((7 * festival) + weatherPenalty).toFixed(2);
-  document.getElementById('f-total').textContent = cpi.toFixed(1);
+  const flowEl = document.getElementById('f-flow');
+  const densityEl = document.getElementById('f-density');
+  const burstEl = document.getElementById('f-burst');
+  const envEl = document.getElementById('f-env');
+  const totalEl = document.getElementById('f-total');
+  if (flowEl) flowEl.textContent = (0.42 * (netInflow / effectiveWidth)).toFixed(2);
+  if (densityEl) densityEl.textContent = (8.7 * density).toFixed(2);
+  if (burstEl) burstEl.textContent = ((10 * burst) + (1.9 * vehicles)).toFixed(2);
+  if (envEl) envEl.textContent = ((7 * festival) + weatherPenalty).toFixed(2);
+  if (totalEl) totalEl.textContent = cpi.toFixed(1);
 }
 
 function addToHistory(corridor, cpi) {
@@ -2697,8 +2715,9 @@ async function runPrediction() {
   errorDiv.id = 'pred-error';
   errorDiv.style.cssText = 'color: var(--red); font-size: 12px; margin-bottom: 10px; display: none;';
 
-  const formContainer = document.querySelector('.form-group').parentElement;
-  if (!formContainer.querySelector('#pred-error')) {
+  const formAnchor = document.querySelector('.form-group');
+  const formContainer = formAnchor?.parentElement;
+  if (formContainer && !formContainer.querySelector('#pred-error')) {
     formContainer.insertBefore(errorDiv, formContainer.lastChild);
   }
 
@@ -2749,24 +2768,23 @@ async function runPrediction() {
   loading.style.display = 'inline-block';
   if (predictBtn) predictBtn.disabled = true;
 
-  console.log('INPUT:', data);
-
   try {
-    const response = await fetch(PREDICT_API_URL, {
+    const response = await fetch(getPredictApiUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
+      const errorData = await readJsonSafely(response);
       throw new Error(errorData.details || `API Error: ${response.status}`);
     }
 
-    const responsePayload = await response.json();
+    const responsePayload = await readJsonSafely(response);
     const prediction = responsePayload?.prediction || responsePayload;
-    console.log('Prediction response:', prediction);
-
+    if (!prediction || typeof prediction !== 'object') {
+      throw new Error('Invalid prediction response');
+    }
     lastPredictionResult = prediction;
     displayPrediction(prediction);
     showToast('✓ Prediction received');
@@ -2782,36 +2800,46 @@ async function runPrediction() {
 }
 
 function displayPrediction(prediction) {
+  const pressure = Number(prediction?.pressure_index ?? 0);
+  const minutes = Number(prediction?.predicted_crush_window_min ?? 0);
+  const reason = String(prediction?.reason || 'No reason provided');
+  const level = String(prediction?.risk_level || 'LOW').toUpperCase();
+
   // Set the breach seconds from real prediction
-  breachSeconds = Math.ceil(prediction.predicted_crush_window_min * 60);
+  breachSeconds = Math.ceil(minutes * 60);
 
   // Update display elements with REAL data
-  document.getElementById('pred-pressure').textContent = prediction.pressure_index.toFixed(2);
-  document.getElementById('pred-countdown').textContent = prediction.predicted_crush_window_min.toFixed(1);
-  document.getElementById('pred-crush').textContent = prediction.predicted_crush_window_min.toFixed(1) + ' min';
-  document.getElementById('pred-reason').textContent = prediction.reason;
+  const pressureEl = document.getElementById('pred-pressure');
+  const countdownEl = document.getElementById('pred-countdown');
+  const crushEl = document.getElementById('pred-crush');
+  const reasonEl = document.getElementById('pred-reason');
+  if (pressureEl) pressureEl.textContent = pressure.toFixed(2);
+  if (countdownEl) countdownEl.textContent = minutes.toFixed(1);
+  if (crushEl) crushEl.textContent = `${minutes.toFixed(1)} min`;
+  if (reasonEl) reasonEl.textContent = reason;
 
-  const level = prediction.risk_level.toUpperCase();
-  document.getElementById('pred-level-val').textContent = level;
+  const levelEl = document.getElementById('pred-level-val');
+  if (levelEl) levelEl.textContent = level;
 
   // Update risk colors based on REAL prediction
   const riskEl = document.getElementById('pred-risk');
   const riskText = document.getElementById('pred-risk-text');
-  riskText.textContent = level + ' RISK — ' + prediction.reason.substring(0, 30) + '...';
+  if (riskText) riskText.textContent = `${level} RISK — ${reason.substring(0, 30)}...`;
 
   // Color code by actual risk level
+  const riskDot = riskEl?.querySelector('.risk-dot');
   if (level === 'CRITICAL' || level === 'HIGH') {
-    document.getElementById('pred-pressure').style.color = 'var(--red)';
-    riskEl.querySelector('.risk-dot').style.background = 'var(--red)';
-    document.getElementById('pred-level-val').style.color = 'var(--red)';
+    if (pressureEl) pressureEl.style.color = 'var(--red)';
+    if (riskDot) riskDot.style.background = 'var(--red)';
+    if (levelEl) levelEl.style.color = 'var(--red)';
   } else if (level === 'MODERATE') {
-    document.getElementById('pred-pressure').style.color = 'var(--amber)';
-    riskEl.querySelector('.risk-dot').style.background = 'var(--amber)';
-    document.getElementById('pred-level-val').style.color = 'var(--amber)';
+    if (pressureEl) pressureEl.style.color = 'var(--amber)';
+    if (riskDot) riskDot.style.background = 'var(--amber)';
+    if (levelEl) levelEl.style.color = 'var(--amber)';
   } else {
-    document.getElementById('pred-pressure').style.color = 'var(--green)';
-    riskEl.querySelector('.risk-dot').style.background = 'var(--green)';
-    document.getElementById('pred-level-val').style.color = 'var(--green)';
+    if (pressureEl) pressureEl.style.color = 'var(--green)';
+    if (riskDot) riskDot.style.background = 'var(--green)';
+    if (levelEl) levelEl.style.color = 'var(--green)';
   }
 
   // Generate recommendations based on REAL prediction
@@ -2824,9 +2852,10 @@ function displayPrediction(prediction) {
 
 function generateRecommendations(prediction) {
   const list = document.getElementById('recommendations-list');
-  const level = prediction.risk_level.toUpperCase();
-  const pressure = prediction.pressure_index;
-  const window = prediction.predicted_crush_window_min;
+  if (!list) return;
+  const level = String(prediction?.risk_level || 'LOW').toUpperCase();
+  const pressure = Number(prediction?.pressure_index ?? 0);
+  const window = Number(prediction?.predicted_crush_window_min ?? 0);
 
   let recommendations = [];
 
@@ -2880,7 +2909,7 @@ function addPredictionToHistory(prediction) {
   if (!list) return;
 
   const now = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-  const level = prediction.risk_level.toUpperCase();
+  const level = String(prediction?.risk_level || 'LOW').toUpperCase();
   const badgeClass = level === 'CRITICAL' || level === 'HIGH' ? 'badge-danger' : level === 'MODERATE' ? 'badge-warning' : 'badge-safe';
   const textClass = level === 'CRITICAL' || level === 'HIGH' ? 'danger-text' : level === 'MODERATE' ? 'warn-text' : 'safe-text';
 
@@ -2889,7 +2918,7 @@ function addPredictionToHistory(prediction) {
   item.innerHTML = `
     <span class="h-time">${now}</span>
     <span class="h-corridor">PRED</span>
-    <span class="h-cpi ${textClass}">${prediction.pressure_index.toFixed(1)}</span>
+    <span class="h-cpi ${textClass}">${Number(prediction?.pressure_index ?? 0).toFixed(1)}</span>
     <span class="badge ${badgeClass}">${level}</span>
   `;
   list.insertBefore(item, list.firstChild);
@@ -2905,7 +2934,7 @@ async function ackAlertById(alertId) {
       headers: authHeaders(),
     });
     if (!response.ok) {
-      const err = await response.json();
+      const err = await readJsonSafely(response);
       throw new Error(err.error || 'Failed to acknowledge alert');
     }
     showToast('✓ Alert acknowledged');
@@ -2948,7 +2977,7 @@ function triggerAlert() {
 async function viewCorridor(id) {
   const detail = document.getElementById('corridor-detail');
   const nameEl = document.getElementById('detail-name');
-  detail.style.display = 'block';
+  if (detail) detail.style.display = 'block';
   const corridor = liveCorridors.find((c) => c.id === id);
   if (nameEl) nameEl.textContent = `${corridor?.name || id} - Detail`;
 
@@ -2956,10 +2985,13 @@ async function viewCorridor(id) {
     await ensureApiBase();
     const response = await fetch(`${BASE}/corridors/${id}`, { headers: authHeaders() });
     if (!response.ok) throw new Error('Failed to load corridor detail');
-    const detailData = await response.json();
+    const detailData = await readJsonSafely(response);
     const history = detailData.history || [];
     if (nameEl) nameEl.textContent = `${detailData.name || id} - Detail`;
-    const chartValues = history.map((h) => Number(h.cpi.toFixed(1)));
+    const chartValues = history.map((h) => {
+      const value = Number(h?.cpi ?? h?.pressure_index ?? 0);
+      return Number.isFinite(value) ? Number(value.toFixed(1)) : 0;
+    });
     const chartLabels = history.map((h) => new Date(h.timestamp).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
     initDetailChart(chartValues, chartLabels);
   } catch (error) {
@@ -3009,7 +3041,7 @@ function updateStatus(sel) {
 
 // ── MODALS ──────────────────────────────
 function openModal(type) {
-  document.getElementById('modal-overlay').classList.add('active');
+  document.getElementById('modal-overlay')?.classList.add('active');
   document.querySelectorAll('.modal-content').forEach(m => m.style.display = 'none');
   const m = document.getElementById(`modal-${type}`);
   if (m) m.style.display = 'block';
@@ -3049,7 +3081,7 @@ async function createCorridor() {
       body: JSON.stringify({ name, width, length, capacity }),
     });
     
-    const data = await response.json();
+    const data = await readJsonSafely(response);
     
     if (!response.ok) {
       if (response.status === 409) {
@@ -3061,10 +3093,14 @@ async function createCorridor() {
     }
 
     closeModal(true);
-    document.getElementById('new-corridor-name').value = '';
-    document.getElementById('new-corridor-width').value = '';
-    document.getElementById('new-corridor-length').value = '';
-    document.getElementById('new-corridor-capacity').value = '';
+    const nameInput = document.getElementById('new-corridor-name');
+    const widthInput = document.getElementById('new-corridor-width');
+    const lengthInput = document.getElementById('new-corridor-length');
+    const capacityInput = document.getElementById('new-corridor-capacity');
+    if (nameInput) nameInput.value = '';
+    if (widthInput) widthInput.value = '';
+    if (lengthInput) lengthInput.value = '';
+    if (capacityInput) capacityInput.value = '';
     
     showToast(`✅ Corridor "${name}" created successfully`);
     await loadLiveData();
@@ -3075,7 +3111,7 @@ async function createCorridor() {
 }
 
 function closeModal(silent = false) {
-  document.getElementById('modal-overlay').classList.remove('active');
+  document.getElementById('modal-overlay')?.classList.remove('active');
   if (!silent) showToast('✓ Action saved');
 }
 

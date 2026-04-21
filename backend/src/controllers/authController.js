@@ -3,8 +3,21 @@ const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const User = require('../models/User');
 
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function normalizeRole(role) {
+  const normalized = String(role || '').trim().toLowerCase();
+  return ['police', 'transport', 'admin'].includes(normalized) ? normalized : 'admin';
+}
+
 function getJwtSecret() {
-  return process.env.JWT_SECRET || 'stampede-window-predictor-dev-secret';
+  const secret = process.env.JWT_SECRET;
+  if (!secret && process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET is required in production');
+  }
+  return secret || 'stampede-window-predictor-dev-secret';
 }
 
 function isDbConnected() {
@@ -12,8 +25,8 @@ function isDbConnected() {
 }
 
 function buildDemoUser(email, role = 'admin') {
-  const safeEmail = String(email || 'demo@local').trim().toLowerCase();
-  const safeRole = ['police', 'transport', 'admin'].includes(role) ? role : 'admin';
+  const safeEmail = normalizeEmail(email) || 'demo@local';
+  const safeRole = normalizeRole(role);
 
   return {
     id: 'demo-user',
@@ -26,19 +39,26 @@ function buildDemoUser(email, role = 'admin') {
 exports.register = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedRole = normalizeRole(role);
+    const safeName = String(name || normalizedEmail.split('@')[0] || 'user').trim();
 
-    if (!email || !password) {
+    if (!normalizedEmail || !password) {
       return res.status(400).json({ msg: 'Email and password are required' });
+    }
+
+    if (String(password).length < 6) {
+      return res.status(400).json({ msg: 'Password must be at least 6 characters long' });
     }
 
     if (!isDbConnected()) {
       return res.status(201).json({
         msg: 'User registered successfully',
-        user: buildDemoUser(email, role || 'admin'),
+        user: buildDemoUser(normalizedEmail, normalizedRole),
       });
     }
 
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       return res.status(400).json({ msg: 'User already exists' });
     }
@@ -47,10 +67,10 @@ exports.register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const user = await User.create({
-      name,
-      email,
+      name: safeName,
+      email: normalizedEmail,
       password: hashedPassword,
-      role,
+      role: normalizedRole,
     });
 
     res.status(201).json({
@@ -70,13 +90,14 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = normalizeEmail(email);
 
-    if (!email || !password) {
+    if (!normalizedEmail || !password) {
       return res.status(400).json({ msg: 'Email and password are required' });
     }
 
     if (!isDbConnected()) {
-      const user = buildDemoUser(email, 'admin');
+      const user = buildDemoUser(normalizedEmail, 'admin');
       const token = jwt.sign(user, getJwtSecret(), { expiresIn: '1d' });
       return res.json({
         msg: 'Login successful',
@@ -85,7 +106,7 @@ exports.login = async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: normalizedEmail }).select('+password');
     if (!user) {
       return res.status(400).json({ msg: 'Invalid credentials' });
     }
@@ -128,6 +149,9 @@ exports.getMe = async (req, res) => {
     }
 
     const user = await User.findById(req.user.id).select('-password');
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
     res.json(user);
   } catch (err) {
     res.status(500).json({ error: err.message });
