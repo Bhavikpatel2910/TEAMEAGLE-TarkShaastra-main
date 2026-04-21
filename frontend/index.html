@@ -2454,8 +2454,8 @@ function refreshPressureChart() {
 
 function initForecastChart() {
   if (forecastChart) forecastChart.destroy();
-  const ctx = document.getElementById('forecastChart');
-  if (!ctx) return;
+  const canvas = document.getElementById('forecastChart');
+  if (!canvas) return;
   const actual = [...cpiHistory];
   const labels = [...cpiLabels];
   const predicted = actual.length
@@ -2473,7 +2473,7 @@ function initForecastChart() {
     predicted.push(null);
   }
 
-  forecastChart = new Chart(ctx.getContext('2d'), {
+  forecastChart = new Chart(canvas, {
     type: 'line',
     data: {
       labels,
@@ -2523,10 +2523,10 @@ function initForecastChart() {
 
 function initResponseChart() {
   if (responseChart) responseChart.destroy();
-  const ctx = document.getElementById('responseChart');
-  if (!ctx) return;
+  const canvas = document.getElementById('responseChart');
+  if (!canvas) return;
 
-  responseChart = new Chart(ctx.getContext('2d'), {
+  responseChart = new Chart(canvas, {
     type: 'bar',
     data: {
       labels: ['Police', 'Temple', 'Medical', 'Fire'],
