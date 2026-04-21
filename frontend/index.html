@@ -527,6 +527,19 @@ body {
   margin-bottom: 16px;
 }
 
+.chart-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  overflow: hidden;
+}
+
+.chart-card canvas {
+  max-width: 100%;
+  height: auto !important;
+  width: 100% !important;
+}
+
 .card-header {
   display: flex;
   align-items: center;
@@ -1373,7 +1386,7 @@ body {
             <span class="card-title">PRESSURE TREND — GATE A</span>
             <span class="card-tag">Last 10 readings</span>
           </div>
-          <canvas id="pressureChart" height="180"></canvas>
+          <canvas id="pressureChart" width="800" height="180"></canvas>
         </div>
 
         <!-- CORRIDOR STATUS -->
@@ -1529,7 +1542,7 @@ body {
           <div class="detail-stat"><div class="detail-label">Burst Load</div><div class="detail-val">200 (transport)</div></div>
           <div class="detail-stat"><div class="detail-label">CPI Score</div><div class="detail-val danger-text">87.2</div></div>
         </div>
-        <canvas id="detailChart" height="120"></canvas>
+        <canvas id="detailChart" width="800" height="120"></canvas>
       </div>
     </div>
 
@@ -1743,7 +1756,7 @@ body {
               <span class="card-title">PRESSURE FORECAST</span>
               <span class="card-tag">Actual + Predicted (dotted)</span>
             </div>
-            <canvas id="forecastChart" height="200"></canvas>
+            <canvas id="forecastChart" width="800" height="200"></canvas>
           </div>
         </div>
 
@@ -1885,7 +1898,7 @@ body {
         <!-- Response Analytics -->
         <div class="analytics-panel">
           <div class="card-header"><span class="card-title">RESPONSE ANALYTICS</span></div>
-          <canvas id="responseChart" height="200"></canvas>
+          <canvas id="responseChart" width="800" height="200"></canvas>
           <div class="analytics-stats">
             <div class="a-stat"><div class="a-label">Avg Response Time</div><div class="a-val">4.2 min</div></div>
             <div class="a-stat"><div class="a-label">Actions Completed</div><div class="a-val">8</div></div>
@@ -2436,6 +2449,7 @@ function initCharts() {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
         x: { ticks: { color: '#555f72', font: { family: 'Space Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
@@ -2512,6 +2526,7 @@ function initForecastChart() {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       plugins: { legend: { labels: { color: '#8892a4', font: { family: 'Space Mono', size: 10 } } } },
       scales: {
         x: { ticks: { color: '#555f72', font: { family: 'Space Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
@@ -2541,6 +2556,7 @@ function initResponseChart() {
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
         x: { ticks: { color: '#555f72', font: { family: 'Space Mono', size: 10 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
