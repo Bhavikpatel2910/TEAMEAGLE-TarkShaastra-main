@@ -536,8 +536,17 @@ body {
 
 .chart-card canvas {
   max-width: 100%;
-  height: auto !important;
+  display: block;
+}
+
+.chart-container {
+  position: relative !important;
   width: 100% !important;
+}
+
+.chart-container canvas {
+  max-width: 100%;
+  display: block;
 }
 
 .card-header {
@@ -1371,7 +1380,9 @@ body {
             <span class="card-title">PRESSURE TREND — GATE A</span>
             <span class="card-tag">Last 10 readings</span>
           </div>
-          <canvas id="pressureChart" width="800" height="180"></canvas>
+          <div class="chart-container" style="position: relative; height: 200px; width: 100%;">
+            <canvas id="pressureChart"></canvas>
+          </div>
         </div>
 
         <!-- CORRIDOR STATUS -->
@@ -1527,7 +1538,9 @@ body {
           <div class="detail-stat"><div class="detail-label">Burst Load</div><div class="detail-val">200 (transport)</div></div>
           <div class="detail-stat"><div class="detail-label">CPI Score</div><div class="detail-val danger-text">87.2</div></div>
         </div>
-        <canvas id="detailChart" width="800" height="120"></canvas>
+        <div class="chart-container" style="position: relative; height: 150px; width: 100%;">
+          <canvas id="detailChart"></canvas>
+        </div>
       </div>
     </div>
 
@@ -1741,7 +1754,9 @@ body {
               <span class="card-title">PRESSURE FORECAST</span>
               <span class="card-tag">Actual + Predicted (dotted)</span>
             </div>
-            <canvas id="forecastChart" width="800" height="200"></canvas>
+            <div class="chart-container" style="position: relative; height: 250px; width: 100%;">
+              <canvas id="forecastChart"></canvas>
+            </div>
           </div>
         </div>
 
@@ -1883,7 +1898,9 @@ body {
         <!-- Response Analytics -->
         <div class="analytics-panel">
           <div class="card-header"><span class="card-title">RESPONSE ANALYTICS</span></div>
-          <canvas id="responseChart" width="800" height="200"></canvas>
+          <div class="chart-container" style="position: relative; height: 250px; width: 100%;">
+            <canvas id="responseChart"></canvas>
+          </div>
           <div class="analytics-stats">
             <div class="a-stat"><div class="a-label">Avg Response Time</div><div class="a-val">4.2 min</div></div>
             <div class="a-stat"><div class="a-label">Actions Completed</div><div class="a-val">8</div></div>
